@@ -1,0 +1,112 @@
+name: Verify MicroBin Release on GitHub
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact LPK release tag
+        required: true
+        default: v2.1.4
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: microbin-release-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Download exact Release asset on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_NAME="community.lazycat.app.microbin-${RELEASE_TAG}.lpk"
+          echo "ASSET_NAME=$ASSET_NAME" >> "$GITHUB_ENV"
+          gh release view "$RELEASE_TAG" --json tagName,assets > release-metadata.json
+          gh release download "$RELEASE_TAG" --pattern "$ASSET_NAME" --dir verify-pkg
+      - name: Verify artifact, forced auth and separated admin account
+        shell: python
+        run: |
+          import hashlib, json, os, subprocess, sys, tarfile
+          from pathlib import Path
+
+          try:
+              import yaml
+          except ImportError:
+              subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet', 'PyYAML==6.0.3'])
+              import yaml
+
+          name = os.environ['ASSET_NAME']
+          tag = os.environ['RELEASE_TAG']
+          version = tag.removeprefix('v')
+
+          meta = json.loads(Path('release-metadata.json').read_text())
+          assets = [a for a in meta['assets'] if a['name'] == name]
+          assert len(assets) == 1, assets
+          pkg = Path('verify-pkg') / name
+
+          h = hashlib.sha256()
+          with pkg.open('rb') as f:
+              for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                  h.update(chunk)
+          assert 'sha256:' + h.hexdigest() == assets[0]['digest'], 'Release digest mismatch'
+
+          with tarfile.open(pkg) as package:
+              names = set(package.getnames())
+              assert {'package.yml', 'manifest.yml', 'deploy_params.yml', 'content.tar', 'icon.png'} <= names, names
+
+              info = yaml.safe_load(package.extractfile('package.yml').read())
+              assert info['package'] == 'community.lazycat.app.microbin'
+              assert str(info['version']) == version
+              assert info['name'] == 'MicroBin'
+              assert info['license'] == 'BSD-3-Clause'
+              assert str(info['min_os_version']) == '1.5.0'
+
+              text = package.extractfile('manifest.yml').read().decode()
+              m = yaml.safe_load(text)
+              app = m['application']
+              assert app['subdomain'] == 'microbin'
+              upstreams = app['upstreams']
+              assert any(u['location'] == '/package-licenses/' and u['backend'].startswith('file://') for u in upstreams)
+              assert any(u['location'] == '/' and u['backend'] == 'http://microbin:8080/' for u in upstreams)
+              assert 'public_path' not in app
+
+              svc = m['services']['microbin']
+              assert 'danielszabo99/microbin' in svc['image'], svc['image']
+              assert svc['binds'] == ['/lzcapp/var/data:/data']
+              env = '\n'.join(svc['environment'])
+              # Site-wide auth must be configured, otherwise upstream is fully open.
+              assert '.U.access_user' in env and '.U.access_secret' in env
+              # Admin credentials are a separate pair.
+              assert '.U.admin_user' in env and '.U.admin_secret' in env
+              assert 'MICROBIN_NO_LISTING=true' in env
+              assert 'healthcheck' not in text
+              assert 'lzc-file-chooser' not in text
+
+              params = yaml.safe_load(package.extractfile('deploy_params.yml').read())
+              by_id = {p['id']: p for p in params['params']}
+              assert set(by_id) == {'access_user', 'access_secret', 'admin_user', 'admin_secret'}, set(by_id)
+              assert by_id['access_secret']['type'] == 'secret'
+              assert by_id['admin_secret']['type'] == 'secret'
+
+              with tarfile.open(fileobj=package.extractfile('content.tar')) as content:
+                  members = content.getnames()
+                  lic = [n for n in members if 'licenses/' in n]
+                  assert lic, members
+                  license_text = content.extractfile(lic[0]).read().decode()
+              assert 'BSD 3-Clause' in license_text
+
+          result = {
+              'verified': True,
+              'tag': tag,
+              'sha256': h.hexdigest(),
+              'size': pkg.stat().st_size,
+              'runtime_tested': False,
+          }
+          print(json.dumps(result))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('Independent cloud artifact verification\n\n' + json.dumps(result, indent=2) + '\n')

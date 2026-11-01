@@ -1,0 +1,39 @@
+params:
+  - id: access_user
+    type: string
+    name: Site access username
+    description: "Whole-site basic auth username. Everyone who opens a shared link needs this."
+    default_value: guest
+    optional: false
+  - id: access_secret
+    type: secret
+    name: Site access secret
+    description: "Whole-site basic auth secret, at least 12 characters. Applied at container start."
+    default_value: "$random(len=20)"
+    optional: false
+  - id: admin_user
+    type: string
+    name: Admin username
+    description: "Separate administrator login for /admin/. Must differ from the site access username."
+    default_value: admin
+    optional: false
+  - id: admin_secret
+    type: secret
+    name: Admin secret
+    description: "Administrator secret, at least 12 characters. Gates /admin/ only."
+    default_value: "$random(len=24)"
+    optional: false
+locales:
+  zh:
+    access_user:
+      name: 全站访问用户名
+      description: 全站基本认证的用户名。打开分享链接的人也需要这个账号。
+    access_secret:
+      name: 全站访问密码
+      description: 全站基本认证密码，至少 12 位，容器启动时生效。
+    admin_user:
+      name: 管理员用户名
+      description: 单独的管理员登录账号，用于 /admin/，需与全站访问用户名不同。
+    admin_secret:
+      name: 管理员密码
+      description: 管理员密码，至少 12 位，仅保护 /admin/。

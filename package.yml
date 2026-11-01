@@ -1,0 +1,18 @@
+package: community.lazycat.app.microbin
+version: 2.1.4
+name: MicroBin
+description: "Tiny pastebin and file sharing service with URL shortening and encryption."
+min_os_version: "1.5.0"
+homepage: https://github.com/szabodanika/microbin
+author: szabodanika
+license: BSD-3-Clause
+permissions:
+  required:
+    - net.internet
+locales:
+  zh:
+    name: MicroBin
+    description: "轻量粘贴板与文件分享：短链接、过期时间、阅后即焚与服务端加密。"
+  en:
+    name: MicroBin
+    description: "Tiny pastebin and file sharing service with URL shortening and encryption."

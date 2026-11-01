@@ -1,0 +1,53 @@
+application:
+  subdomain: microbin
+  multi_instance: false
+  upstreams:
+    - location: /package-licenses/
+      backend: file:///lzcapp/pkg/content/licenses/
+    - location: /
+      backend: http://microbin:8080/
+
+services:
+  microbin:
+    # upstream: danielszabo99/microbin:2.1.4
+    image: docker.1ms.run/danielszabo99/microbin:2.1.4
+    environment:
+      - MICROBIN_PORT=8080
+      - MICROBIN_BIND=0.0.0.0
+      - MICROBIN_DATA_DIR=/data
+      - MICROBIN_TITLE=MicroBin
+      # Whole-site basic auth: upstream serves everything anonymously without it.
+      - |-
+        MICROBIN_BASIC_AUTH_USERNAME={{ .U.access_user | replace "\r" "" | replace "\n" "" }}
+      - |-
+        MICROBIN_BASIC_AUTH_PASSWORD={{ .U.access_secret | replace "\r" "" | replace "\n" "" }}
+      # Admin credentials are separate: they gate /admin/ instead of the whole site.
+      - |-
+        MICROBIN_ADMIN_USERNAME={{ .U.admin_user | replace "\r" "" | replace "\n" "" }}
+      - |-
+        MICROBIN_ADMIN_PASSWORD={{ .U.admin_secret | replace "\r" "" | replace "\n" "" }}
+      - MICROBIN_NO_LISTING=true
+      - MICROBIN_DISABLE_UPDATE_CHECKING=true
+      - MICROBIN_DISABLE_TELEMETRY=true
+    binds:
+      - /lzcapp/var/data:/data
+
+usage: |
+  MicroBin 是轻量粘贴板与文件分享：贴文本或传文件，生成短链接，可设过期时间和阅后即焚。
+
+  使用方法：
+  1. 打开应用，浏览器会弹出全站登录框，输入部署参数里的访问用户名和密码。
+  2. 粘贴内容或选择文件上传，设置过期时间、是否阅后即焚、是否加密。
+  3. 生成链接后发给对方；对方打开时同样需要全站登录。
+  4. 进 /admin/ 用另一组管理员账号可以管理内容和设置。
+
+  数据与安全：
+  - 粘贴内容与上传文件保存在 /lzcapp/var/data，卸载应用会一并删除。
+  - 本包强制开启全站基本认证：上游默认是任何人都能发粘贴，这里改成必须登录才能访问，避免被当作公开粘贴站滥用。
+  - 管理员账号与全站访问账号分开，互不相同；两组都由部署参数决定，改动后重新部署生效。
+  - 已关闭公开列表，别人不能浏览服务器上已有的内容。
+  - 应用同时保留懒猫入口鉴权。
+
+  说明：
+  - 分享链接给外部的人时，对方需要知道全站访问账号，请按需分发。
+  - 未做真机验证：登录、创建粘贴、文件上传、过期清理、阅后即焚以及重启后持久化均未在设备上实测。
